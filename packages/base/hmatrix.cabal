@@ -121,8 +121,11 @@ library
             extra-libraries:    blas lapack
 
     if os(linux)
-        extra-lib-dirs:  /usr/lib/openblas/lib
-        extra-libraries: openblas
+        if flag(openblas)
+            extra-lib-dirs:     /usr/lib/openblas/lib
+            extra-libraries:    openblas
+        else
+            extra-libraries:    blas lapack
 
         if arch(x86_64)
             cc-options: -fPIC
