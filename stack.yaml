@@ -14,4 +14,4 @@ packages:
 - packages/glpk/
 - packages/base/
 extra-deps: []
-resolver: lts-7.18
+resolver: lts-8.15

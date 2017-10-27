@@ -20,13 +20,16 @@ imported from "Numeric.LinearAlgebra.LAPACK".
 -}
 -----------------------------------------------------------------------------
 
-module Internal.Algorithms where
+module Internal.Algorithms (
+  module Internal.Algorithms,
+  UpLo(..)
+) where
 
 import Internal.Vector
 import Internal.Matrix
 import Internal.Element
 import Internal.Conversion
-import Internal.LAPACK as LAPACK
+import Internal.LAPACK
 import Internal.Numeric
 import Data.List(foldl1')
 import qualified Data.Array as A
@@ -58,6 +61,8 @@ class (Numeric t,
     mbLinearSolve' :: Matrix t -> Matrix t -> Maybe (Matrix t)
     linearSolve' :: Matrix t -> Matrix t -> Matrix t
     cholSolve'   :: Matrix t -> Matrix t -> Matrix t
+    triSolve'   :: UpLo -> Matrix t -> Matrix t -> Matrix t
+    triDiagSolve' :: Vector t -> Vector t -> Vector t -> Matrix t -> Matrix t
     ldlPacked'   :: Matrix t -> (Matrix t, [Int])
     ldlSolve'    :: (Matrix t, [Int]) -> Matrix t -> Matrix t
     linearSolveSVD' :: Matrix t -> Matrix t -> Matrix t
@@ -83,6 +88,8 @@ instance Field Double where
     linearSolve' = linearSolveR                 -- (luSolve . luPacked) ??
     mbLinearSolve' = mbLinearSolveR
     cholSolve' = cholSolveR
+    triSolve' = triSolveR
+    triDiagSolve' = triDiagSolveR
     linearSolveLS' = linearSolveLSR
     linearSolveSVD' = linearSolveSVDR Nothing
     eig' = eigR
@@ -112,6 +119,8 @@ instance Field (Complex Double) where
     linearSolve' = linearSolveC
     mbLinearSolve' = mbLinearSolveC
     cholSolve' = cholSolveC
+    triSolve' = triSolveC
+    triDiagSolve' = triDiagSolveC
     linearSolveLS' = linearSolveLSC
     linearSolveSVD' = linearSolveSVDC Nothing
     eig' = eigC
@@ -349,6 +358,79 @@ cholSolve
     -> Matrix t -- ^ right hand sides
     -> Matrix t -- ^ solution
 cholSolve = {-# SCC "cholSolve" #-} cholSolve'
+
+-- | Solve a triangular linear system. If `Upper` is specified then
+-- all elements below the diagonal are ignored; if `Lower` is
+-- specified then all elements above the diagonal are ignored.
+triSolve
+  :: Field t
+  => UpLo     -- ^ `Lower` or `Upper`
+  -> Matrix t -- ^ coefficient matrix
+  -> Matrix t -- ^ right hand sides
+  -> Matrix t -- ^ solution
+triSolve = {-# SCC "triSolve" #-} triSolve'
+
+-- | Solve a tridiagonal linear system. Suppose you wish to solve \(Ax = b\) where
+--
+-- \[
+-- A =
+-- \begin{bmatrix}
+--    1.0 & 4.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0
+-- \\ 3.0 & 1.0 & 4.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0
+-- \\ 0.0 & 3.0 & 1.0 & 4.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0
+-- \\ 0.0 & 0.0 & 3.0 & 1.0 & 4.0 & 0.0 & 0.0 & 0.0 & 0.0
+-- \\ 0.0 & 0.0 & 0.0 & 3.0 & 1.0 & 4.0 & 0.0 & 0.0 & 0.0
+-- \\ 0.0 & 0.0 & 0.0 & 0.0 & 3.0 & 1.0 & 4.0 & 0.0 & 0.0
+-- \\ 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 3.0 & 1.0 & 4.0 & 0.0
+-- \\ 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 3.0 & 1.0 & 4.0
+-- \\ 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 3.0 & 1.0
+-- \end{bmatrix}
+-- \quad
+-- b =
+-- \begin{bmatrix}
+--    1.0 &  1.0 &  1.0
+-- \\ 1.0 & -1.0 &  2.0
+-- \\ 1.0 &  1.0 &  3.0
+-- \\ 1.0 & -1.0 &  4.0
+-- \\ 1.0 &  1.0 &  5.0
+-- \\ 1.0 & -1.0 &  6.0
+-- \\ 1.0 &  1.0 &  7.0
+-- \\ 1.0 & -1.0 &  8.0
+-- \\ 1.0 &  1.0 &  9.0
+-- \end{bmatrix}
+-- \]
+--
+-- then
+--
+-- @
+-- dL =  fromList [3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0]
+-- d  =  fromList [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+-- dU =  fromList [4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0]
+--
+-- b = (9><3)
+--     [
+--       1.0,   1.0,   1.0,
+--       1.0,  -1.0,   2.0,
+--       1.0,   1.0,   3.0,
+--       1.0,  -1.0,   4.0,
+--       1.0,   1.0,   5.0,
+--       1.0,  -1.0,   6.0,
+--       1.0,   1.0,   7.0,
+--       1.0,  -1.0,   8.0,
+--       1.0,   1.0,   9.0
+--     ]
+--
+-- x = triDiagSolve dL d dU b
+-- @
+--
+triDiagSolve
+  :: Field t
+  => Vector t -- ^ lower diagonal: \(n - 1\) elements
+  -> Vector t -- ^ diagonal: \(n\) elements
+  -> Vector t -- ^ upper diagonal: \(n - 1\) elements
+  -> Matrix t -- ^ right hand sides
+  -> Matrix t -- ^ solution
+triDiagSolve = {-# SCC "triDiagSolve" #-} triDiagSolve'
 
 -- | Minimum norm solution of a general linear least squares problem Ax=B using the SVD. Admits rank-deficient systems but it is slower than 'linearSolveLS'. The effective rank of A is determined by treating as zero those singular valures which are less than 'eps' times the largest singular value.
 linearSolveSVD :: Field t => Matrix t -> Matrix t -> Matrix t

@@ -94,6 +94,11 @@ module Numeric.LinearAlgebra (
     ldlSolve, ldlPacked,
     -- ** Positive definite
     cholSolve,
+    -- ** Triangular
+    UpLo(..),
+    triSolve,
+    -- ** Tridiagonal
+    triDiagSolve,
     -- ** Sparse
     cgSolve,
     cgSolve',
